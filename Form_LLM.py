@@ -2,6 +2,7 @@ from langchain_groq import ChatGroq
 from langchain.prompts import ChatPromptTemplate
 from groq import Groq
 import os
+import re
 import base64
 import json 
 import requests
@@ -11,11 +12,30 @@ client = Groq(api_key=API_KEY)
 
 # FORM Auto suggest part #
 
+import requests
+
 def get_previous_forms(url):
-    response = requests.get(url)
-    print(response.json()) 
-    # Return the actual JSON object (dictionary), not a string
-    return response.json()  # This gives us a Python dict, ready to use
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Will raise an HTTPError for bad responses
+
+        # Try to parse JSON
+        data = response.json()
+        print("Fetched data:", data)
+        return data
+
+    except requests.exceptions.HTTPError as http_err:
+        print(f"[HTTP ERROR] {http_err} - Status Code: {response.status_code}")
+        print("Response text:", response.text[:500])  # Avoid printing a giant HTML dump
+
+    except requests.exceptions.JSONDecodeError as json_err:
+        print(f"[JSON ERROR] Failed to decode JSON: {json_err}")
+        print("Response text:", response.text[:500])
+
+    except Exception as err:
+        print(f"[ERROR] Unexpected error: {err}")
+
+    return None  # Always return something, even on failure
 
 
 # def generate_autofill(form_type, previous_forms):
@@ -90,6 +110,9 @@ def generate_autofill(form_type, previous_forms):
     system_message = f"""
         You are a helpful assistant that fills out {form_type} forms in JSON format.
         Based on previous form data and the current request, suggest an auto-filled form {form_type}.
+        
+        RULE:
+        1. Don't use this previous word rather than provide the information from past forms
 
         ONLY return a JSON object that matches this schema:
         ```json
@@ -100,7 +123,7 @@ def generate_autofill(form_type, previous_forms):
     # Use LangChain's ChatPromptTemplate
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_message.strip()),
-        ("human", f"Based on the following past forms:\n{history}\n\nGenerate a new autofilled form.")
+        ("human", f"Based on the following past forms:\n{history}\n\nGenerate and suggest new autofilled form.")
     ])
 
     # Initialize the LLM (ChatGroq in your case)
@@ -117,7 +140,17 @@ def generate_autofill(form_type, previous_forms):
     chain = prompt | llm
     response = chain.invoke({})  # Invoke the chain with no additional input
 
-    return response.content
+  # 🔍 Clean and parse the JSON response
+
+    match = re.search(r"```json\n(.*)\n```", response.content, re.DOTALL)
+    if match:
+        json_str = match.group(1)
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse AI response as JSON", "raw_output": json_str}
+    else:
+        return {"error": "No valid JSON block found", "raw_output": response.content}
 
 #for  AI-Generated Compliance & Rectification Reports – AI cross-checks Australian Standerds and provides fixes #
 
@@ -145,15 +178,14 @@ def generate_compliance_report(site_report_text):
     system_prompt = f"""
     You are an Australian safety compliance expert.
 
-    Your task is to analyze a site report for potential violations of Australian Standards and provide rectification suggestions.
+    Your task is to analyze a site report and determine if there are any compliance issues with reference to the following Australian Standards:
 
-    Australian Standards Reference:
     {standards_summary}
 
-    Respond ONLY in this JSON format:
+    Respond ONLY in the following JSON format:
     ```json
-    {escaped_format}
-    """
+    {escaped_format}"""
+
     prompt = ChatPromptTemplate.from_messages([
     ("system", system_prompt.strip()),
     ("human", f"Site Report: {site_report_text}")
@@ -170,46 +202,50 @@ def generate_compliance_report(site_report_text):
 
     chain = prompt | llm
     response = chain.invoke({})
-    return response.content
+    match = re.search(r"```json\n(.*)\n```", response.content, re.DOTALL)
+    if match:
+        json_str = match.group(1)
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse AI response as JSON", "raw_output": json_str}
+    else:
+        return {"error": "No valid JSON block found", "raw_output": response.content}
 
+##RFI ###
 
-#  RFI PART #
-def load_rfi_history(file_path="rfi_data.json"): #json file extrACTION FOR TESTING 
-    import json
-    with open(file_path, "r") as f:
-        return json.load(f)
+def fetch_rfi_data_from_api(api_url):
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()  # Raise error for bad status
+        print(response.json())
+        return response.json()  
+    
+    # Assumes the API returns JSON
+    except requests.RequestException as e:
+        print(f"Error fetching RFI data: {e}")
+        return []
 
 def format_rfi_history(rfi_entries):
     formatted = ""
     for i, rfi in enumerate(rfi_entries, 1):
-        formatted += f"RFI {i}:\nQ: {rfi['question']}\nA: {rfi['answer']}\n\n"
+        if not isinstance(rfi, dict):
+            print(f"Skipping invalid RFI entry at index {i}: {rfi}")
+            continue
+
+        question = rfi.get('question') or rfi.get('rfi_question')
+        answer = rfi.get('answer') or rfi.get('rfi_answer')
+        formatted += f"RFI {i}:\nQ: {question}\nA: {answer}\n\n"
     return formatted.strip()
 
 
-# FOR FETCHIMNG DATA FROM API \#
-# import requests
+def RFI_Suggestion(user_rfi_question):  #api url when extract data 
+    # api="https://hrb5wx2v-8000.inc1.devtunnels.ms/api/data"
+    api="https://hrb5wx2v-8000.inc1.devtunnels.ms/api/rfi"
+    rfi_entries = fetch_rfi_data_from_api(api_url=api)
 
-# def fetch_rfi_data_from_api(api_url):
-#     try:
-#         response = requests.get(api_url)
-#         response.raise_for_status()  # Raise error for bad status
-#         return response.json()  # Assumes the API returns JSON
-#     except requests.RequestException as e:
-#         print(f"Error fetching RFI data: {e}")
-#         return []
-
-# def format_rfi_history(rfi_entries):
-#     formatted = ""
-#     for i, rfi in enumerate(rfi_entries, 1):
-#         question = rfi.get('question') or rfi.get('rfi_question')
-#         answer = rfi.get('answer') or rfi.get('rfi_answer')
-#         formatted += f"RFI {i}:\nQ: {question}\nA: {answer}\n\n"
-#     return formatted.strip()
-
-
-def RFI_Suggestion(user_rfi_question):  #api url wehn extract data 
-    rfi_entries = load_rfi_history()
-    # rfi_entries = fetch_rfi_data_from_api(api_url)
+    # Debugging: Print the fetched RFI entries
+    print("Fetched RFI Entries:", rfi_entries)
 
     history = format_rfi_history(rfi_entries)
 
@@ -239,6 +275,8 @@ Return the answer ONLY as plain text.
     return response.content
 
 
+
+
 # Speech to text 
 def speechtotext(filename):
     with open(filename, "rb") as file:
@@ -257,15 +295,36 @@ def speechtotext(filename):
             # To print only the transcription text, you'd use print(transcription.text) (here we're printing the entire transcription object to access timestamps)
     return data
 
+#GET PROJESTS INSITES #
+def getProject(api_url):
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()  # Raise error for bad status
+        print(response.json)
+        return response.json()  # Assumes the API returns JSON
+    except requests.RequestException as e:
+        print(f"Error fetching PROJECTdata: {e}")
+        return []
 
-def generate_project_insights(user_query):
+def formatProjects(rfi_entries):
+    formatted = ""
+    for i, rfi in enumerate(rfi_entries, 1):
+        question = rfi.get('question') or rfi.get('rfi_question')
+        answer = rfi.get('answer') or rfi.get('rfi_answer')
+        formatted += f"RFI {i}:\nQ: {question}\nA: {answer}\n\n"
+    return formatted.strip()
+
+def generate_project_insights(user_query,user_id):
     """
     Uses AI to generate insights or alerts from construction project data.
     project_data: List of dicts (e.g., rows from a spreadsheet)
     """
+
+    api=f"https://xt2cpwt7-8000.inc1.devtunnels.ms/api/projects/by-user/{user_id}"
+    
     # Convert project data to readable format
-    prdata=load_rfi_history(file_path="Projects_insites.json")
-    project_data=format_rfi_history(prdata)
+    prdata=getProject(api_url=api)
+    project_data=formatProjects(prdata)
 
     context = "\n".join([f"- {json.dumps(row)}" for row in project_data])
 
@@ -346,36 +405,36 @@ def ImageProcessing(imagepath):
 
 
 
-if __name__ == "__main__":
-    form_type = "ITP"
-    previous_forms = [
-        {"data": "Hazard: Working at heights, Control: Safety harness"},
-        {"data": "Hazard: Electrical, Control: Lockout-tagout"},
-    ]
-    # user_input = "Please generate a new SWMS form for a bridge project with common site hazards."
+# if __name__ == "__main__":
+#     form_type = "ITP"
+#     previous_forms = [
+#         {"data": "Hazard: Working at heights, Control: Safety harness"},
+#         {"data": "Hazard: Electrical, Control: Lockout-tagout"},
+#     ]
+#     # user_input = "Please generate a new SWMS form for a bridge project with common site hazards."
 
-    suggested_form = generate_autofill(form_type, previous_forms)
-    # print(suggested_form)
-
-
-    site_report = "Exposed live wiring hanging in a corridor where workers walk frequently, no signage or protection."
-    result = generate_compliance_report(site_report)
-    # print(result)
+#     suggested_form = generate_autofill(form_type, previous_forms)
+#     # print(suggested_form)
 
 
-    user_rfi = "What fire rating applies to the corridor walls?"
-    response = RFI_Suggestion(user_rfi)
-    # print("Suggested RFI Response:", response)
+#     site_report = "Exposed live wiring hanging in a corridor where workers walk frequently, no signage or protection."
+#     result = generate_compliance_report(site_report)
+#     # print(result)
 
-    filename="harvard.wav"
-    text=speechtotext(filename=filename)
-    # print(text)
 
-    user_query = "What compliance risks should I be aware of this week?"
-    insights = generate_project_insights(user_query)
-    # print(insights)
+#     user_rfi = "What fire rating applies to the corridor walls?"
+#     response = RFI_Suggestion(user_rfi)
+#     # print("Suggested RFI Response:", response)
+
+#     filename="harvard.wav"
+#     text=speechtotext(filename=filename)
+#     # print(text)
+
+#     user_query = "What compliance risks should I be aware of this week?"
+#     insights = generate_project_insights(user_query)
+#     # print(insights)
 
     
-    image_path = r"image\istockphoto-1306206468-612x612.jpg"
-    text=ImageProcessing(imagepath=image_path)
-    print(text)
+#     image_path = r"image\istockphoto-1306206468-612x612.jpg"
+#     text=ImageProcessing(imagepath=image_path)
+#     # print(text)

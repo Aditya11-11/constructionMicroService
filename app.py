@@ -25,10 +25,10 @@ def autofill():
 @app.route("/complinces_standards", methods= ["POST"])
 def compliences():
     data=request.json
-    user_id=data.get("user_id")
+    # user_id=data.get("user_id")
     site_report_text=data.get("report_text")
 
-    if not user_id or not site_report_text:
+    if not site_report_text:
         return jsonify({"error" : "user_id and report_text required"})
     standard_response=generate_compliance_report(site_report_text)
 
@@ -41,18 +41,20 @@ def compliences():
 @app.route("/rfi_suggestions", methods= ["POST"])
 def rfi():
     data=request.json
-    user_id=data.get("user_id")
+    # user_id=data.get("user_id")
     rfi_question=data.get("question")
-    # rfi_url=data.get("url")
+    # api_url=data.get("url")
 
-    if not user_id or not rfi_question:
-        return jsonify({"error" : "user_id and report_text required"})
-    standard_response=RFI_Suggestion(rfi_question)
+    if not rfi_question:
+        return jsonify({"error" : "report_text required"})
+    
+    standard_response= RFI_Suggestion(rfi_question)
 
     return jsonify({
         "rfi_suggestion": standard_response
     })
     
+
 
 @app.route("/speechtotext", methods=["POST"])
 def speech_to_text_api():
@@ -87,12 +89,13 @@ def speech_to_text_api():
 def project_insights():
     data = request.json
     user_query = data.get("question")
+    user_id=data.get("user_id")
 
-    if not user_query:
+    if not user_id or not user_query:
         return jsonify({"error": "question is required"}), 400
 
     try:
-        insights = generate_project_insights(user_query)
+        insights = generate_project_insights(user_query,user_id=user_id)
         return jsonify({"insights": insights})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

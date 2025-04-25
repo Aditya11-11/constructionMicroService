@@ -1,5 +1,0 @@
-[
-    {"task": "Install wiring", "status": "incomplete", "due_date": "2025-04-25", "compliance_flag": "AS/NZS 3000 not yet verified"},
-    {"task": "Scaffolding", "status": "complete", "due_date": "2025-04-20"},
-    {"task": "Fire exit signage", "status": "pending", "due_date": "2025-04-24", "note": "Blocked path"}
-]
