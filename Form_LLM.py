@@ -5,9 +5,13 @@ from langchain.prompts import PromptTemplate
 import re
 from utiles.globalllm import GroqLLM
 import json 
+import os
 from form_schemas import form_schemas , compliance_json_template # your schema map
 from utiles.utils import load_retriever_from_faiss ,fetch_rfi_data_from_api,format_rfi_history,encode_image,load_retriever_from_faiss_projects #getProject,formatProjects
-API_KEY = "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"
+from dotenv import load_dotenv
+
+load_dotenv()
+API_KEY = os.getenv("MY_API_KEY")
 client = Groq(api_key=API_KEY)
 
 groq_llm = GroqLLM(model="llama-3.1-8b-instant", api_key=API_KEY,temperature=0.4)
@@ -244,7 +248,7 @@ def ImageProcessing(imagepath):
     # Getting the base64 string
     base64_image = encode_image(image_path=imagepath)
 
-    client = Groq(api_key="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")
+    client = Groq(api_key=API_KEY)
 
     chat_completion = client.chat.completions.create(
         messages=[
